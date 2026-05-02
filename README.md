@@ -1,11 +1,19 @@
-<div align="center">
+# DataMind AI
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+A professional full-stack data analytics platform built with React, Express, and Gemini AI.
 
-  <h1>Built with AI Studio</h2>
+## Features
+- **SQL Query Runner**: Execute raw SQL on CSV uploads with AI explanations.
+- **Web Scraper**: Extract data from URLs and save as datasets.
+- **AI Data Analyzer**: Automated summaries, trends, and reports.
+- **Dashboard Builder**: AI-generated visual dashboards using Recharts.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## Setup
+1. Install dependencies: `npm install`
+2. Configure `.env`: Set `GEMINI_API_KEY`
+3. Run development: `npm run dev`
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
-
-</div>
+## Tech Stack
+- Frontend: React + Tailwind CSS + Recharts
+- Backend: Express + SQLite (better-sqlite3) + Cheerio
+- AI: Google Gemini AI SDK

@@ -1,0 +1,6 @@
+{
+  "name": "DataMind AI",
+  "description": "A comprehensive data analytics platform for SQL exploration, web scraping, and AI-powered data insights.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["SQL Querying", "Web Scraping", "AI Data Analysis", "Interactive Dashboards"]
+}
