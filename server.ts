@@ -1,4 +1,5 @@
-import express, { Request, Response } from "express";
+import express from "express";
+import type { Request, Response } from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -14,7 +15,8 @@ import * as cheerio from "cheerio";
 import axios from "axios";
 import Papa from "papaparse";
 import fs from "fs";
-import knex, { Knex } from "knex";
+import knex from "knex";
+import type { Knex } from "knex";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

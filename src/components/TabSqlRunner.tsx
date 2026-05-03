@@ -61,8 +61,9 @@ export function TabSqlRunner({ datasets, onDatasetAdded, onRefresh, selectedData
   const [suggestingChart, setSuggestingChart] = useState(false);
   const [insights, setInsights] = useState("");
   const [generatingInsights, setGeneratingInsights] = useState(false);
+  const [viewMode, setViewMode] = useState<"table" | "chart">("table");
   
-  const [showConnectModal, setShowConnectModal] = useState(false);
+  const [showConnectModal, setShowConnectModal] = useState(true);
   const [connectionId, setConnectionId] = useState<string | null>(null);
   const [dbType, setDbType] = useState("pg");
   const [dbConfig, setDbConfig] = useState({
@@ -131,11 +132,39 @@ export function TabSqlRunner({ datasets, onDatasetAdded, onRefresh, selectedData
     setLoading(true);
     setErrorLog(null);
     setInsights("");
+    setSmartChart(null); // Clear previous chart
     try {
       const res = await axios.post("/api/sql-run", { query, connectionId });
-      setResults(res.data.results);
+      const data = res.data.results;
+      setResults(data);
       setExplanation(""); 
       
+      // Auto-configure chart based on data types
+      if (data.length > 0) {
+        const columns = Object.keys(data[0]);
+        let xKey = "";
+        let yKey = "";
+        
+        // Find first string for X, first number for Y
+        for (const col of columns) {
+          const val = data[0][col];
+          if (!xKey && typeof val === "string") xKey = col;
+          if (!yKey && typeof val === "number") yKey = col;
+        }
+
+        // Fallbacks
+        if (!xKey) xKey = columns[0];
+        if (!yKey) yKey = columns[1] || columns[0];
+
+        setSmartChart({
+          type: "bar",
+          title: "Auto-generated Visualization",
+          xKey,
+          yKey,
+          color: "#1a73e8"
+        });
+      }
+
       // Add to history
       setHistory(prev => [{
         id: Math.random().toString(36).substr(2, 9),
@@ -819,13 +848,36 @@ export function TabSqlRunner({ datasets, onDatasetAdded, onRefresh, selectedData
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Results ({results.length})</span>
             {results.length > 0 && (
               <>
+                <div className="h-4 w-px bg-slate-200 mx-1" />
+                <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                  <button 
+                    onClick={() => setViewMode("table")}
+                    className={cn(
+                      "px-3 py-1 text-[10px] font-bold rounded-md transition-all",
+                      viewMode === "table" ? "bg-white text-slate-900 shadow-sm" : "text-slate-400"
+                    )}
+                  >
+                    Table
+                  </button>
+                  <button 
+                    onClick={() => setViewMode("chart")}
+                    className={cn(
+                      "px-3 py-1 text-[10px] font-bold rounded-md transition-all",
+                      viewMode === "chart" ? "bg-white text-blue-600 shadow-sm" : "text-slate-400"
+                    )}
+                  >
+                    Chart
+                  </button>
+                </div>
+
                 <button 
                   onClick={suggestChart}
                   disabled={suggestingChart}
                   className="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-100 px-3 py-1 rounded-full font-bold flex items-center gap-1.5 hover:bg-indigo-100 transition-colors disabled:opacity-50"
+                  title="Re-generate Smart Chart"
                 >
-                  {suggestingChart ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <BarChart3 className="w-2.5 h-2.5" />}
-                  Smart Visualize
+                  {suggestingChart ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Sparkles className="w-2.5 h-2.5" />}
+                  Smart
                 </button>
                 <button 
                   onClick={generateReport}
@@ -875,24 +927,60 @@ export function TabSqlRunner({ datasets, onDatasetAdded, onRefresh, selectedData
           </AnimatePresence>
 
           {results.length > 0 ? (
-            <table className="w-full text-left border-collapse min-w-full">
-              <thead>
-                <tr className="bg-slate-50/50 sticky top-0 z-10 shadow-sm">
-                  {Object.keys(results[0]).map(k => (
-                    <th key={k} className="px-6 py-3 text-xs font-bold text-slate-500 uppercase border-b border-slate-100">{k}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {results.map((row, i) => (
-                  <tr key={i} className="hover:bg-slate-50 transition-colors">
-                    {Object.values(row).map((v: any, j) => (
-                      <td key={j} className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{String(v)}</td>
+            viewMode === "chart" && smartChart ? (
+              <div className="p-8 h-full flex flex-col">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-4">
+                    <select 
+                      value={smartChart.type}
+                      onChange={(e) => setSmartChart({...smartChart, type: e.target.value})}
+                      className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="bar">Bar Chart</option>
+                      <option value="line">Line Chart</option>
+                      <option value="area">Area Chart</option>
+                      <option value="pie">Pie Chart</option>
+                    </select>
+
+                    <div className="flex items-center gap-2">
+                       <span className="text-[10px] font-bold text-slate-400 uppercase">Y-Axis</span>
+                       <select 
+                         value={smartChart.yKey}
+                         onChange={(e) => setSmartChart({...smartChart, yKey: e.target.value})}
+                         className="text-[10px] font-bold bg-white border border-slate-200 rounded px-2 py-1"
+                       >
+                         {Object.keys(results[0]).map(k => <option key={k} value={k}>{k}</option>)}
+                       </select>
+                    </div>
+                  </div>
+                  <h4 className="text-sm font-black text-slate-400 uppercase tracking-tighter">Automatic Insights Visualization</h4>
+                </div>
+                <div className="flex-1 min-h-[400px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    {renderSmartChart() || <div />}
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse min-w-full">
+                <thead>
+                  <tr className="bg-slate-50/50 sticky top-0 z-10 shadow-sm">
+                    {Object.keys(results[0]).map(k => (
+                      <th key={k} className="px-6 py-3 text-xs font-bold text-slate-500 uppercase border-b border-slate-100">{k}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {results.slice(0, 500).map((row, i) => (
+                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                      {Object.values(row).map((v: any, j) => (
+                        <td key={j} className="px-6 py-3 text-sm text-slate-600 whitespace-nowrap">{String(v)}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
           ) : errorLog ? (
             <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
               <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-4">

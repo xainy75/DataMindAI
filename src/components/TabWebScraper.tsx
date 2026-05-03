@@ -31,9 +31,19 @@ export function TabWebScraper({ onDatasetAdded, onRefresh }: TabWebScraperProps)
   const [logs, setLogs] = useState<ScrapingLog[]>([]);
   const [progress, setProgress] = useState(0);
   const [nlFocus, setNlFocus] = useState("");
+  const [exampleRow, setExampleRow] = useState("");
+  const [targetSchema, setTargetSchema] = useState("");
   const [isPreScanning, setIsPreScanning] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [suggestedSchema, setSuggestedSchema] = useState<string[]>([]);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  // Auto-scroll logic for terminal
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [logs]);
 
   const addLog = (msg: string, type: ScrapingLog["type"] = "info") => {
     const newLog: ScrapingLog = {
@@ -42,15 +52,17 @@ export function TabWebScraper({ onDatasetAdded, onRefresh }: TabWebScraperProps)
       type,
       timestamp: new Date().toLocaleTimeString().split(" ")[0],
     };
-    setLogs(prev => [newLog, ...prev].slice(0, 50));
+    setLogs(prev => [...prev, newLog].slice(-50));
   };
 
   const handlePreScan = async () => {
     if (!url) return;
     setIsPreScanning(true);
-    addLog(`Pre-scanning ${url} for schema patterns...`, "ai");
+    addLog(`Initiating pre-scan sequence for: ${url}`, "info");
+    addLog("Analyzing HTML structure for semantic data markers...", "ai");
     try {
       const res = await axios.post("/api/scrape-pre-scan", { url });
+      addLog(`Fetch complete (${res.data.text?.length || 0} chars). Passing to Gemini for schema inference...`, "ai");
       const htmlText = res.data.text;
 
       const prompt = `Analyze this webpage content and suggest a list of column names that represent the structured data present (like products, articles, or table data).
@@ -67,9 +79,10 @@ export function TabWebScraper({ onDatasetAdded, onRefresh }: TabWebScraperProps)
       
       const columns = JSON.parse(result.text.replace(/```json|```/g, "").trim());
       setSuggestedSchema(columns || []);
-      addLog(`Suggested columns identified: ${columns?.join(", ")}`, "success");
+      addLog(`AI heuristic detection successful. ${columns?.length || 0} columns discovered.`, "success");
+      addLog(`Suggested schema: ${columns?.join(", ")}`, "info");
     } catch (err) {
-      addLog("Pre-scan failed. Using generic detection.", "error");
+      addLog("Pre-scan failed or timeout exceeded. Using generic data detection.", "error");
     } finally {
       setIsPreScanning(false);
     }
@@ -82,10 +95,16 @@ export function TabWebScraper({ onDatasetAdded, onRefresh }: TabWebScraperProps)
     setLogs([]);
     setProgress(10);
     addLog(`Initiating scraping for ${url}...`);
+    setProgress(5);
 
     try {
-      addLog("Fetching page content...", "info");
-      setProgress(30);
+      addLog("Initializing connection setup...", "info");
+      if (proxyEnabled) addLog("Configuring residential proxy pool for bypass...", "info");
+      setProgress(15);
+      
+      addLog(jsRender ? "Launching headless browser instance..." : "Executing lightweight HTTP fetch...", "info");
+      if (jsRender) addLog("Waiting for SPA hydration and network idle...", "info");
+      setProgress(40);
       
       const res = await axios.post("/api/scrape", { 
         url, 
@@ -95,17 +114,34 @@ export function TabWebScraper({ onDatasetAdded, onRefresh }: TabWebScraperProps)
         proxyEnabled,
       });
       
-      setProgress(70);
+      addLog(`HTTP ${res.status} OK. Received ${res.data.html?.length || 0} bytes of raw markup.`, "success");
+      addLog("Analyzing DOM structure for candidate data nodes...", "info");
+      setProgress(60);
+
       let finalResults = res.data.results;
 
-      if (mode === "smart" || nlFocus) {
-        addLog("AI processing HTML structure to extract clean data...", "ai");
+      if (mode === "smart" || mode === "example" || mode === "schema" || nlFocus) {
+        addLog("Sanitizing HTML tree (removing scripts, styles, and non-content tags)...", "info");
+        addLog("Tokenizing content for Gemini Vision/Text processing...", "ai");
+        setProgress(70);
+        
+        let extractionContext = nlFocus || "Extract structured data in tabular format.";
+        if (mode === "example" && exampleRow) {
+          extractionContext += ` Use this example row as a template for extraction: ${exampleRow}`;
+        } else if (mode === "schema" && targetSchema) {
+          extractionContext += ` Strictly follow this schema (list of column names): ${targetSchema}`;
+        }
+
+        addLog(`Applying Extraction Logic: "${extractionContext.substring(0, 50)}..."`, "ai");
+        addLog("Sending payload to AI extraction engine...", "ai");
+        setProgress(85);
+        
         const htmlBody = res.data.html;
 
         const prompt = `You are a professional data scraper. 
-        Instruction: ${nlFocus || "Extract structured data in tabular format."}
+        Instruction: ${extractionContext}
         
-        HTML:
+        HTML Content:
         ${htmlBody}
         
         Return ONLY a JSON object:
@@ -113,7 +149,7 @@ export function TabWebScraper({ onDatasetAdded, onRefresh }: TabWebScraperProps)
           "tables": [
             [["Col1", "Col2"], ["Val1", "Val2"]]
           ],
-          "summary": "..."
+          "summary": "Brief summary of what was found"
         }`;
 
         const result = await ai.models.generateContent({
@@ -121,16 +157,17 @@ export function TabWebScraper({ onDatasetAdded, onRefresh }: TabWebScraperProps)
           contents: [{ role: "user", parts: [{ text: prompt }] }]
         });
         
+        addLog("AI processing complete. Reconstructing table schema...", "success");
         finalResults = JSON.parse(result.text.replace(/```json|```/g, "").trim());
       }
 
       setScrapedData(finalResults);
-      addLog("Scraping completed successfully!", "success");
       setProgress(100);
       
       if (finalResults.tables?.length > 0) {
-        addLog(`Found ${finalResults.tables.length} structured tables.`, "success");
+        addLog(`Successfully extracted ${finalResults.tables.length} tables from the stream.`, "success");
       }
+      addLog("Scraping workflow finished.", "success");
     } catch (err: any) {
       const errorMsg = err.message;
       addLog(`Error: ${errorMsg}`, "error");
@@ -280,6 +317,36 @@ export function TabWebScraper({ onDatasetAdded, onRefresh }: TabWebScraperProps)
                 />
               </div>
 
+              {mode === "example" && (
+                <div className="animate-in slide-in-from-top-2 duration-300">
+                  <div className="relative group">
+                    <Zap className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400" />
+                    <input 
+                      type="text"
+                      value={exampleRow}
+                      onChange={(e) => setExampleRow(e.target.value)}
+                      placeholder="Provide an example row of data (e.g. 'iPhone 15, $999, In Stock')..."
+                      className="w-full pl-11 pr-4 py-3 bg-emerald-50/30 border border-emerald-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {mode === "schema" && (
+                <div className="animate-in slide-in-from-top-2 duration-300">
+                  <div className="relative group">
+                    <Database className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-purple-400" />
+                    <input 
+                      type="text"
+                      value={targetSchema}
+                      onChange={(e) => setTargetSchema(e.target.value)}
+                      placeholder="Define columns as comma-separated list (e.g. 'Name, Price, Rating, Image_URL')..."
+                      className="w-full pl-11 pr-4 py-3 bg-purple-50/30 border border-purple-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                    />
+                  </div>
+                </div>
+              )}
+
               {suggestedSchema.length > 0 && (
                 <div className="flex flex-wrap gap-2 animate-in fade-in slide-in-from-top-2">
                   <span className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1 py-1">AI Detected:</span>
@@ -303,6 +370,8 @@ export function TabWebScraper({ onDatasetAdded, onRefresh }: TabWebScraperProps)
                   className="w-full py-2 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
                 >
                   <option value="smart">AI Smart Filter</option>
+                  <option value="example">Extract by Example</option>
+                  <option value="schema">Schema-guided</option>
                   <option value="tables">Tables Only</option>
                   <option value="text">Full Content</option>
                   <option value="links">Links Discovery</option>
@@ -482,24 +551,39 @@ export function TabWebScraper({ onDatasetAdded, onRefresh }: TabWebScraperProps)
                 <Terminal className="w-4 h-4 text-emerald-400" />
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Scraping Console</span>
               </div>
-              <div className="flex-1 overflow-y-auto space-y-2.5 custom-scrollbar-dark font-mono text-[10px]">
+              <div 
+                ref={scrollRef}
+                className="flex-1 overflow-y-auto space-y-2.5 custom-scrollbar-dark font-mono text-[10px] scroll-smooth"
+              >
                 {logs.length === 0 ? (
                   <p className="text-slate-600 italic">Console ready. Waiting for input...</p>
                 ) : (
-                  logs.map(log => (
-                    <div key={log.id} className="flex gap-2 animate-in fade-in slide-in-from-left-4">
-                      <span className="text-slate-600 shrink-0">[{log.timestamp}]</span>
-                      <span className={cn(
-                        log.type === "info" ? "text-slate-400" :
-                        log.type === "success" ? "text-emerald-400" :
-                        log.type === "error" ? "text-rose-400" :
-                        "text-blue-300 flex items-center gap-1"
-                      )}>
-                        {log.type === "ai" && <Sparkles className="w-2.5 h-2.5" />}
-                        {log.msg}
-                      </span>
-                    </div>
-                  ))
+                  <>
+                    {logs.map(log => (
+                      <div key={log.id} className="flex gap-2 animate-in fade-in slide-in-from-left-4">
+                        <span className="text-slate-600 shrink-0">[{log.timestamp}]</span>
+                        <span className={cn(
+                          log.type === "info" ? "text-slate-400" :
+                          log.type === "success" ? "text-emerald-400" :
+                          log.type === "error" ? "text-rose-400" :
+                          "text-blue-300 flex items-center gap-1"
+                        )}>
+                          {log.type === "ai" && <Sparkles className="w-2.5 h-2.5" />}
+                          {log.msg}
+                        </span>
+                      </div>
+                    ))}
+                    {loading && (
+                      <div className="flex gap-2 animate-pulse">
+                        <span className="text-slate-600">[{new Date().toLocaleTimeString().split(" ")[0]}]</span>
+                        <span className="text-blue-400 flex items-center gap-1">
+                          <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                          Processing stream...
+                          <span className="w-1.5 h-3 bg-blue-400 ml-1 inline-block animate-[bounce_1s_infinite]" />
+                        </span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
               
