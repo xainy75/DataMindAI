@@ -2,6 +2,8 @@
 
 A professional full-stack data analytics platform built with React, Express, and Gemini AI.
 
+![DataMind AI Screenshot](https://github.com/user-attachments/assets/6c291ca1-6e87-44af-9e03-ff6c2057b2eb)
+
 ## Features
 - **SQL Query Runner**: Execute raw SQL on CSV uploads with AI explanations.
 - **Web Scraper**: Extract data from URLs and save as datasets.
